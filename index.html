@@ -212,6 +212,10 @@
   .tipo-chip.selected{ color:#fff; border-color:transparent; }
 
   /* Date picker visual */
+  .past-date-warning{
+    background:#FBEAE7; border:1px solid #D14B4B; color:#A33; border-radius:9px;
+    padding:9px 14px; margin-top:8px; font-family:"Helvetica Neue",Arial,sans-serif; font-size:12.5px; font-weight:600;
+  }
   .datepicker-trigger{
     width:100%; padding:12px 14px; border:1px solid var(--line); border-radius:9px;
     font-family:"Helvetica Neue",Arial,sans-serif; font-size:14px; background:#fff; cursor:pointer;
@@ -250,8 +254,12 @@
   .turno-chip.libre{ border-color:var(--libre-border); }
   .turno-chip.libre .label{ color:var(--libre-border); }
   .turno-chip.ocupado{ background:#FBEAE7; border-color:#D14B4B; cursor:not-allowed; opacity:.7; }
+  .turno-franja.ocupado{ cursor:pointer; opacity:1; background:#FFF5E0; border-color:#D9A23B; }
+  .turno-franja.ocupado .label{ color:#8a5a00; }
   .turno-chip.ocupado .label{ color:#A33; }
   .turno-chip.selected{ background:var(--verde-chico); border-color:var(--verde-chico); }
+  .turno-franja{ padding:18px 14px; }
+  .turno-franja .hora{ font-size:17px; }
   .turno-chip.selected .hora, .turno-chip.selected .label{ color:#fff; }
 
   .staff-role-group{ margin-bottom:16px; }
@@ -950,6 +958,21 @@ function pickDate(y,m,d){
   document.getElementById("dpPanel").classList.remove("open");
   renderDatePicker();
   renderTurnos();
+  checkPastDateWarning();
+}
+
+function checkPastDateWarning(){
+  const existing = document.getElementById("pastDateWarning");
+  if(existing) existing.remove();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const compareDate = new Date(selectedDate); compareDate.setHours(0,0,0,0);
+  if(compareDate < today){
+    const warning = document.createElement("div");
+    warning.id = "pastDateWarning";
+    warning.className = "past-date-warning";
+    warning.innerHTML = `⚠ Esta fecha ya pasó. Revisá que sea la fecha correcta antes de guardar.`;
+    document.getElementById("dpTrigger").insertAdjacentElement("afterend", warning);
+  }
 }
 
 function renderTurnos(){
@@ -970,15 +993,46 @@ function renderTurnos(){
       </div>`;
     }).join("");
   } else {
-    document.getElementById("turnosLabel").textContent = "Horario de inicio (día de semana, horario libre)";
-    const yaOcupado = slots.some(s=>s.estado==='EVENTO');
-    grid.innerHTML = `
-      <div style="grid-column:1/-1;">
-        <input type="time" id="fHorarioLibre" onchange="pickTurno(this.value)" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-family:'Helvetica Neue',Arial,sans-serif;font-size:14px;">
-        ${yaOcupado ? `<p class="hint" style="color:#A33;margin-top:8px;">⚠ Este día ya tiene ${slots.filter(s=>s.estado==='EVENTO').length} evento(s) cargado(s). Revisá que no se superponga el horario.</p>` : `<p class="hint" style="margin-top:8px;">Este día está libre — duración estándar 2hs 30min.</p>`}
+    document.getElementById("turnosLabel").textContent = "Elegí la franja (lunes a viernes, horario de inicio a elección dentro de cada franja)";
+    const eventosDelDia = slots.filter(s=>s.estado==='EVENTO');
+
+    const franjas = [
+      { key:'mediodia', label:'Mediodía', tope:'13:30', desde:'00:00', hasta:'13:30' },
+      { key:'tarde', label:'Tarde', tope:'18:30', desde:'13:31', hasta:'18:30' },
+    ];
+
+    grid.innerHTML = franjas.map(f=>{
+      const enEstaFranja = eventosDelDia.filter(ev=>{
+        if(!ev.inicio) return false;
+        return ev.inicio >= f.desde && ev.inicio <= f.hasta;
+      });
+      const ocupado = enEstaFranja.length > 0;
+      const cls = ocupado ? 'ocupado' : 'libre';
+      const label = ocupado
+        ? `Ya hay ${enEstaFranja.length} evento(s) — ${enEstaFranja.map(e=>e.inicio).join(', ')}`
+        : `Disponible — inicio máximo ${f.tope}hs`;
+      return `<div class="turno-chip turno-franja ${cls}" data-franja="${f.key}" onclick="pickFranja('${f.key}','${f.tope}')" style="grid-column:span 2;">
+        <span class="hora">${f.label}</span><span class="label">${label}</span>
       </div>`;
+    }).join("");
   }
   field.style.display = "block";
+}
+
+function pickFranja(key, tope){
+  document.querySelectorAll('.turno-franja').forEach(c=>c.classList.toggle('selected', c.dataset.franja===key));
+  const grid = document.getElementById("turnosGrid");
+  const existingPicker = document.getElementById("horarioPickerWrap");
+  if(existingPicker) existingPicker.remove();
+
+  const wrap = document.createElement("div");
+  wrap.id = "horarioPickerWrap";
+  wrap.style.gridColumn = "1/-1";
+  wrap.innerHTML = `
+    <label style="display:block;font-family:'Helvetica Neue',Arial,sans-serif;font-size:12.5px;font-weight:600;color:var(--ink-soft);margin:12px 0 6px;">Horario exacto de inicio (hasta las ${tope}hs)</label>
+    <input type="time" id="fHorarioLibre" max="${tope}" onchange="pickTurno(this.value)" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-family:'Helvetica Neue',Arial,sans-serif;font-size:14px;">
+    <p class="hint" style="margin-top:6px;">Duración estándar 2hs 30min.</p>`;
+  grid.appendChild(wrap);
 }
 
 function pickTurno(hora){
