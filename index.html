@@ -104,6 +104,11 @@
 
   /* Calendar grid */
   .cal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .month-counter{
+    font-family:"Helvetica Neue",Arial,sans-serif; font-size:12.5px; font-weight:700;
+    color:var(--verde-chico); background:#E6F2F3; border:1px solid var(--verde-chico);
+    border-radius:20px; padding:6px 14px; white-space:nowrap;
+  }
   .search-wrap{ position:relative; margin-bottom:14px; }
   .search-wrap.global-search{ margin-bottom:22px; }
   .search-wrap.global-search input{
@@ -150,7 +155,23 @@
   .day.today .num{ background:var(--ink); color:#fff; border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; }
   .ev{ font-family:"Helvetica Neue",Arial,sans-serif; font-size:10.5px; line-height:1.25; border-radius:5px; padding:2px 5px; color:#fff; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .ev.alert{ outline:2px solid var(--alert-ink); outline-offset:-2px; }
-  .more{ font-family:"Helvetica Neue",Arial,sans-serif; font-size:10px; color:var(--ink-soft); }
+  .more{ font-family:"Helvetica Neue",Arial,sans-serif; font-size:10px; color:var(--verde-chico); font-weight:700; cursor:pointer; text-decoration:underline; }
+  .more:hover{ color:#004a52; }
+  .day-list-item{
+    display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line);
+    cursor:pointer; transition:.1s;
+  }
+  .day-list-item:last-child{ border-bottom:none; }
+  .day-list-item:hover{ background:var(--bg); }
+  .day-list-item .dli-dot{ width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .day-list-item .dli-text{ font-family:"Helvetica Neue",Arial,sans-serif; }
+  .day-list-item .dli-name{ font-size:13.5px; font-weight:600; }
+  .day-list-item .dli-meta{ font-size:11.5px; color:var(--ink-soft); margin-top:1px; }
+  .close-btn-alt{
+    margin-top:16px; width:100%; padding:10px; border:none; border-radius:9px;
+    background:var(--ink); color:#fff; font-family:"Helvetica Neue",Arial,sans-serif;
+    font-size:13px; cursor:pointer;
+  }
 
   .side h2{ font-size:17px; margin:0 0 4px; }
   .side .sub{ font-family:"Helvetica Neue",Arial,sans-serif; font-size:12px; color:var(--ink-soft); margin:0 0 14px; }
@@ -338,7 +359,7 @@
             <button id="nextBtn">›</button>
           </div>
           <h2 id="monthLabel">—</h2>
-          <div style="width:88px"></div>
+          <div class="month-counter" id="monthCounter">— eventos</div>
         </div>
 
         <div class="legend">
@@ -536,7 +557,7 @@
         </div>
 
         <div class="form-submit-bar">
-          <button type="button" class="btn btn-cancel" onclick="resetForm()">Cancelar</button>
+          <button type="button" class="btn btn-cancel" onclick="confirmCancel()">Cancelar</button>
           <button type="button" class="btn btn-save" onclick="saveEvent()">Guardar evento</button>
         </div>
 
@@ -735,6 +756,7 @@ function render(){
 
   const monthEvents = EVENTS.filter(e=>e.date.getFullYear()===viewYear && e.date.getMonth()===viewMonth);
   const monthEventsReales = monthEvents.filter(e=>e.estado==="EVENTO");
+  document.getElementById("monthCounter").textContent = `${monthEventsReales.length} evento${monthEventsReales.length!==1?'s':''} este mes`;
 
   const grid = document.getElementById("calGrid");
   let cells = [];
@@ -752,7 +774,7 @@ function render(){
       const label = (ev.inicio? ev.inicio+" ":"") + (ev.homenajeado || ev.cliente || "Evento");
       return `<div class="ev ${alertCls}" style="background:${color}" onclick="openModal(${EVENTS.indexOf(ev)})">${label}</div>`;
     }).join("");
-    const moreHtml = eventosDay.length > maxShow ? `<div class="more">+${eventosDay.length-maxShow} más</div>` : "";
+    const moreHtml = eventosDay.length > maxShow ? `<div class="more" onclick="openDayList(${viewYear},${viewMonth},${day})">+${eventosDay.length-maxShow} más</div>` : "";
     const libreHtml = libresDay.length
       ? `<div class="ev-free" title="Turnos libres: ${libresDay.map(l=>l.inicio).join(', ')}">${libresDay.length} libre${libresDay.length!==1?'s':''}</div>`
       : "";
@@ -761,6 +783,31 @@ function render(){
   grid.innerHTML = cells.join("");
   renderRanking(monthEventsReales);
   renderAlerts(monthEventsReales);
+}
+
+function openDayList(y, m, day){
+  const dayEvents = EVENTS.filter(e=>e.date.getFullYear()===y && e.date.getMonth()===m && e.date.getDate()===day && e.estado==="EVENTO")
+    .sort((a,b)=>(a.inicio||"").localeCompare(b.inicio||""));
+  const dateObj = new Date(y, m, day);
+  const dayNames = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+  const itemsHtml = dayEvents.map(ev=>{
+    const idx = EVENTS.indexOf(ev);
+    const color = colorForEvent(ev);
+    return `<div class="day-list-item" onclick="closeModal();setTimeout(()=>openModal(${idx}),100)">
+      <span class="dli-dot" style="background:${color}"></span>
+      <div class="dli-text">
+        <div class="dli-name">${ev.inicio||"?"}hs — ${ev.homenajeado || ev.cliente || "Evento"}${ev.edad?` (${ev.edad} años)`:""}</div>
+        <div class="dli-meta">${ev.cliente||""}</div>
+      </div>
+    </div>`;
+  }).join("");
+  document.getElementById("modalBody").innerHTML = `
+    <h3>${dayNames[dateObj.getDay()]} ${day} de ${MESES[m]}</h3>
+    <div class="meta">${dayEvents.length} evento${dayEvents.length!==1?'s':''} este día</div>
+    <div style="margin-top:10px;">${itemsHtml}</div>
+    <button class="close-btn-alt" onclick="closeModal()">Cerrar</button>
+  `;
+  document.getElementById("modalBg").classList.add("open");
 }
 
 function renderRanking(monthEvents){
@@ -1069,7 +1116,7 @@ function addStaffRow(rol, nombrePrevio, confirmadoPrevio){
         <span class="toggle-dot"></span>
         <span class="toggle-label">${confirmado?'Confirmado':'A confirmar'}</span>
       </div>
-      <button type="button" class="remove-btn" onclick="document.getElementById('${id}').remove()">✕</button>
+      <button type="button" class="remove-btn" onclick="if(confirm('¿Seguro que querés quitar a esta persona del evento?')) document.getElementById('${id}').remove()">✕</button>
     </div>`;
   document.getElementById(rol+"Rows").insertAdjacentHTML("beforeend", html);
 }
@@ -1129,6 +1176,20 @@ function editFromModal(idx){
   }
 }
 
+function formTieneDatos(){
+  const campos = ["fCliente","fContacto","fHomenajeado","fEdad","fNinxs","fAdultos","fTotal","fAclaraciones"];
+  const algunCampoLleno = campos.some(id => document.getElementById(id).value.trim() !== "");
+  const algunStaffElegido = Array.from(document.querySelectorAll('.staff-select-row select')).some(s=>s.value);
+  return algunCampoLleno || algunStaffElegido || !!selectedDate;
+}
+
+function confirmCancel(){
+  if(formTieneDatos()){
+    if(!confirm("¿Seguro que querés cancelar? Se va a perder todo lo que escribiste en este formulario.")) return;
+  }
+  resetForm();
+}
+
 function resetForm(){
   editingIdx = null;
   document.getElementById("eventForm").reset();
@@ -1164,6 +1225,16 @@ function getSelectedTipo(){
   return sel ? sel.dataset.tipo : '';
 }
 
+function calcularEstar(horaInicio){
+  if(!horaInicio || !horaInicio.includes(":")) return "";
+  const [h, mi] = horaInicio.split(":").map(Number);
+  let totalMin = h*60 + mi - 30;
+  if(totalMin < 0) totalMin += 24*60;
+  const hh = String(Math.floor(totalMin/60)).padStart(2,'0');
+  const mm = String(totalMin%60).padStart(2,'0');
+  return `${hh}:${mm}`;
+}
+
 function saveEvent(){
   if(!selectedDate){ alert("Elegí una fecha primero."); return; }
   if(!selectedTurno){ alert("Elegí el turno u horario."); return; }
@@ -1175,6 +1246,7 @@ function saveEvent(){
 
   const resumen = {
     Fecha: `${y}-${m}-${d}`,
+    "Estar (staff)": calcularEstar(selectedTurno),
     Inicio: selectedTurno,
     Cliente: document.getElementById("fCliente").value,
     Contacto: document.getElementById("fContacto").value,
