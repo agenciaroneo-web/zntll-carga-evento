@@ -174,6 +174,25 @@
   }
 
   .side h2{ font-size:17px; margin:0 0 4px; }
+  .mini-counter-card{ padding:16px 20px; }
+  .mini-counter{
+    display:flex; align-items:center; gap:12px; justify-content:space-between;
+  }
+  .mc-arrow{
+    border:1px solid var(--line); background:#fff; border-radius:8px;
+    width:32px; height:32px; cursor:pointer; font-size:12px; color:var(--ink-soft); flex-shrink:0;
+  }
+  .mc-arrow:hover{ background:var(--bg); border-color:var(--verde-chico); color:var(--verde-chico); }
+  .mc-display{ flex:1; text-align:center; }
+  .mc-month{
+    display:block; font-family:"Helvetica Neue",Arial,sans-serif; font-size:12px;
+    font-weight:600; color:var(--ink-soft); text-transform:capitalize; margin-bottom:2px;
+  }
+  .mc-count{
+    display:block; font-family:"Helvetica Neue",Arial,sans-serif; font-size:26px;
+    font-weight:800; color:var(--verde-chico); line-height:1;
+  }
+  .mc-count .mc-count-label{ font-size:11px; font-weight:600; color:var(--ink-soft); display:block; margin-top:2px; }
   .side .sub{ font-family:"Helvetica Neue",Arial,sans-serif; font-size:12px; color:var(--ink-soft); margin:0 0 14px; }
   .rank-row{ display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--line); font-family:"Helvetica Neue",Arial,sans-serif; font-size:13px; }
   .rank-row:last-child{ border-bottom:none; }
@@ -376,6 +395,17 @@
       </div>
 
       <div class="side">
+        <div class="card mini-counter-card">
+          <h2 style="font-size:15px;margin:0 0 12px;">Eventos por mes</h2>
+          <div class="mini-counter">
+            <button class="mc-arrow" onclick="mcNav(-1)" title="Mes anterior">▲</button>
+            <div class="mc-display">
+              <span class="mc-month" id="mcMonthLabel">—</span>
+              <span class="mc-count" id="mcCount">—</span>
+            </div>
+            <button class="mc-arrow" onclick="mcNav(1)" title="Mes siguiente">▼</button>
+          </div>
+        </div>
         <div class="card">
           <h2>Reparto del mes</h2>
           <p class="sub">Eventos asignados por persona — mes en pantalla</p>
@@ -612,6 +642,7 @@ function parseCSV(text){
 
 let EVENTS = [];
 let viewYear, viewMonth;
+let mcYear, mcMonth;
 
 function loadData(){
   fetch(CSV_URL, {cache:"no-store"})
@@ -666,6 +697,8 @@ function loadData(){
         viewYear = first.date.getFullYear(); viewMonth = first.date.getMonth();
       }
       dpYear = viewYear; dpMonth = viewMonth;
+      mcYear = viewYear; mcMonth = viewMonth;
+      renderMiniCounter();
       render();
       renderDatePicker();
       populateStaffSelects();
@@ -743,6 +776,19 @@ function updatePendBadge(count){
 }
 
 /* ===== CALENDAR RENDER (igual al dashboard original) ===== */
+function renderMiniCounter(){
+  document.getElementById("mcMonthLabel").textContent = `${MESES[mcMonth]} ${mcYear}`;
+  const count = EVENTS.filter(e=>e.date.getFullYear()===mcYear && e.date.getMonth()===mcMonth && e.estado==="EVENTO").length;
+  document.getElementById("mcCount").innerHTML = `${count}<span class="mc-count-label">evento${count!==1?'s':''}</span>`;
+}
+
+function mcNav(dir){
+  mcMonth += dir;
+  if(mcMonth<0){ mcMonth=11; mcYear--; }
+  if(mcMonth>11){ mcMonth=0; mcYear++; }
+  renderMiniCounter();
+}
+
 function render(){
   document.getElementById("monthLabel").textContent = `${MESES[viewMonth]} ${viewYear}`;
   const dowRow = document.getElementById("dowRow");
