@@ -221,6 +221,8 @@
   .btn{ flex:1; padding:10px; border:none; border-radius:9px; font-family:"Helvetica Neue",Arial,sans-serif; font-size:13px; cursor:pointer; }
   .btn-primary{ background:var(--ink); color:#fff; }
   .btn-edit{ background:var(--verde-chico); color:#fff; }
+  .btn-delete{ background:#fff; color:#D14B4B; border:1px solid #D14B4B; flex:0.8; }
+  .btn-delete:hover{ background:#FBEAE7; }
 
   /* FORM */
   .form-wrap{ max-width:760px; }
@@ -300,6 +302,11 @@
   .turno-chip.selected{ background:var(--verde-chico); border-color:var(--verde-chico); }
   .turno-franja{ padding:18px 14px; }
   .turno-franja .hora{ font-size:17px; }
+  .time-select{
+    padding:10px 12px; border:1px solid var(--line); border-radius:9px;
+    font-family:"Helvetica Neue",Arial,sans-serif; font-size:14px; color:var(--ink); background:#fff;
+    flex:1;
+  }
   .turno-chip.selected .hora, .turno-chip.selected .label{ color:#fff; }
 
   .staff-role-group{ margin-bottom:16px; }
@@ -335,6 +342,11 @@
     font-family:"Helvetica Neue",Arial,sans-serif; font-size:12.5px; color:var(--ink-soft); display:flex; align-items:center; gap:10px;
   }
   .form-banner.editing{ background:var(--alert-bg); border-color:var(--alert-ink); color:var(--alert-ink); }
+  .link-volver{
+    background:none; border:none; color:var(--alert-ink); text-decoration:underline;
+    font-family:"Helvetica Neue",Arial,sans-serif; font-size:12.5px; font-weight:700; cursor:pointer;
+    padding:0; margin-left:6px;
+  }
 
   .empty-form-state{ text-align:center; padding:50px 20px; font-family:"Helvetica Neue",Arial,sans-serif; color:var(--ink-soft); }
 </style>
@@ -453,6 +465,17 @@
           <div class="field" id="turnosField" style="display:none; margin-top:14px;">
             <label id="turnosLabel">Elegí el turno</label>
             <div class="turnos-grid" id="turnosGrid"></div>
+          </div>
+
+          <div class="field" id="finField" style="display:none; margin-top:14px;">
+            <label>Horario de finalización</label>
+            <div style="display:flex;align-items:center;gap:8px;max-width:220px;">
+              <select id="fFinHoraSel" class="time-select"></select>
+              <span style="font-weight:700;color:var(--ink-soft);">:</span>
+              <select id="fFinMinSel" class="time-select"></select>
+              <span style="font-family:'Helvetica Neue',Arial,sans-serif;font-size:13px;color:var(--ink-soft);">hs</span>
+            </div>
+            <p class="hint" style="margin-top:6px;">Se calcula solo (2hs 30min después del inicio) — podés ajustarlo si este evento dura distinto.</p>
           </div>
         </div>
 
@@ -809,7 +832,7 @@ function render(){
   for(let i=0;i<startOffset;i++) cells.push(`<div class="day empty"></div>`);
   for(let day=1; day<=daysInMonth; day++){
     const isToday = today.getFullYear()===viewYear && today.getMonth()===viewMonth && today.getDate()===day;
-    const allSlotsDay = monthEvents.filter(e=>e.date.getDate()===day).sort((a,b)=>(a.inicio||"").localeCompare(b.inicio||""));
+    const allSlotsDay = monthEvents.filter(e=>e.date.getDate()===day).sort((a,b)=>horaAMinutos(a.inicio)-horaAMinutos(b.inicio));
     const eventosDay = allSlotsDay.filter(e=>e.estado==="EVENTO");
     const libresDay = allSlotsDay.filter(e=>e.estado==="LIBRE" && e.inicio);
 
@@ -833,7 +856,7 @@ function render(){
 
 function openDayList(y, m, day){
   const dayEvents = EVENTS.filter(e=>e.date.getFullYear()===y && e.date.getMonth()===m && e.date.getDate()===day && e.estado==="EVENTO")
-    .sort((a,b)=>(a.inicio||"").localeCompare(b.inicio||""));
+    .sort((a,b)=>horaAMinutos(a.inicio)-horaAMinutos(b.inicio));
   const dateObj = new Date(y, m, day);
   const dayNames = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
   const itemsHtml = dayEvents.map(ev=>{
@@ -979,7 +1002,8 @@ function openModal(idx){
     ${ev.alertas?`<div class="row" style="color:#8a5a00"><b>Alertas</b> ${ev.alertas}</div>`:""}
     <div class="row" style="align-items:flex-start"><b>Staff</b> <div>${staffHtml}</div></div>
     <div class="modal-actions">
-      <button class="btn btn-edit" onclick="editFromModal(${idx})">✏️ Editar este evento</button>
+      <button class="btn btn-edit" onclick="editFromModal(${idx})">✏️ Editar</button>
+      <button class="btn btn-delete" onclick="deleteEvent(${idx})">🗑️ Eliminar</button>
       <button class="btn btn-primary" onclick="closeModal()">Cerrar</button>
     </div>
   `;
@@ -997,6 +1021,7 @@ let dpYear, dpMonth;
 let selectedDate = null;
 let selectedTurno = null;
 let editingIdx = null;
+let editingOriginal = null; // {Fecha, Inicio, Cliente} del evento ANTES de la edicion, para identificarlo al actualizar
 
 function toggleDatePicker(){
   document.getElementById("dpPanel").classList.toggle("open");
@@ -1118,19 +1143,79 @@ function pickFranja(key, tope){
   const existingPicker = document.getElementById("horarioPickerWrap");
   if(existingPicker) existingPicker.remove();
 
+  const [topeH, topeM] = tope.split(":").map(Number);
+  const horasOpts = [];
+  for(let h=0; h<=23; h++){
+    if(h > topeH) break;
+    horasOpts.push(`<option value="${String(h).padStart(2,'0')}">${String(h).padStart(2,'0')}</option>`);
+  }
+  const minutosOpts = ['00','05','10','15','20','25','30','35','40','45','50','55']
+    .map(m=>`<option value="${m}">${m}</option>`).join("");
+
   const wrap = document.createElement("div");
   wrap.id = "horarioPickerWrap";
   wrap.style.gridColumn = "1/-1";
   wrap.innerHTML = `
     <label style="display:block;font-family:'Helvetica Neue',Arial,sans-serif;font-size:12.5px;font-weight:600;color:var(--ink-soft);margin:12px 0 6px;">Horario exacto de inicio (hasta las ${tope}hs)</label>
-    <input type="time" id="fHorarioLibre" max="${tope}" onchange="pickTurno(this.value)" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-family:'Helvetica Neue',Arial,sans-serif;font-size:14px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <select id="fHoraSel" class="time-select" onchange="onHorarioLibreChange('${tope}')">${horasOpts.join("")}</select>
+      <span style="font-weight:700;color:var(--ink-soft);">:</span>
+      <select id="fMinSel" class="time-select" onchange="onHorarioLibreChange('${tope}')">${minutosOpts}</select>
+      <span style="font-family:'Helvetica Neue',Arial,sans-serif;font-size:13px;color:var(--ink-soft);">hs</span>
+    </div>
     <p class="hint" style="margin-top:6px;">Duración estándar 2hs 30min.</p>`;
   grid.appendChild(wrap);
+}
+
+function onHorarioLibreChange(tope){
+  const h = document.getElementById("fHoraSel").value;
+  const m = document.getElementById("fMinSel").value;
+  const valor = `${h}:${m}`;
+  const [topeH, topeM] = tope.split(":").map(Number);
+  const [vh, vm] = valor.split(":").map(Number);
+  if(vh > topeH || (vh === topeH && vm > topeM)){
+    alert(`El horario máximo para esta franja es ${tope}hs.`);
+    document.getElementById("fHoraSel").value = String(topeH).padStart(2,'0');
+    document.getElementById("fMinSel").value = String(topeM).padStart(2,'0');
+    pickTurno(tope);
+    return;
+  }
+  pickTurno(valor);
 }
 
 function pickTurno(hora){
   selectedTurno = hora;
   document.querySelectorAll('.turno-chip').forEach(c=>c.classList.toggle('selected', c.dataset.hora===hora));
+  mostrarCampoFin(hora);
+}
+
+function mostrarCampoFin(horaInicio, finManual){
+  const field = document.getElementById("finField");
+  if(!horaInicio || !horaInicio.includes(":")){ field.style.display="none"; return; }
+
+  let horaFin = finManual;
+  if(!horaFin){
+    const [h, mi] = horaInicio.split(":").map(Number);
+    let totalMin = h*60 + mi + 150; // +2hs30 por defecto
+    totalMin = totalMin % (24*60);
+    horaFin = `${String(Math.floor(totalMin/60)).padStart(2,'0')}:${String(totalMin%60).padStart(2,'0')}`;
+  }
+  const [fh, fm] = horaFin.split(":");
+
+  const horasOpts = [];
+  for(let h=0; h<=23; h++) horasOpts.push(`<option value="${String(h).padStart(2,'0')}" ${String(h).padStart(2,'0')===fh?'selected':''}>${String(h).padStart(2,'0')}</option>`);
+  const minutosOpts = ['00','05','10','15','20','25','30','35','40','45','50','55']
+    .map(m=>`<option value="${m}" ${m===fm?'selected':''}>${m}</option>`).join("");
+
+  document.getElementById("fFinHoraSel").innerHTML = horasOpts.join("");
+  document.getElementById("fFinMinSel").innerHTML = minutosOpts;
+  field.style.display = "block";
+}
+
+function getSelectedFin(){
+  const h = document.getElementById("fFinHoraSel").value;
+  const m = document.getElementById("fFinMinSel").value;
+  return h && m ? `${h}:${m}` : "";
 }
 
 /* ===== FORM: TIPO DE EVENTO ===== */
@@ -1176,12 +1261,54 @@ function toggleConfirm(toggleId){
 }
 
 /* ===== FORM: SAVE (prototipo - no escribe todavia) ===== */
+function volverAlCalendario(idx){
+  if(formTieneDatos() && !confirm("¿Seguro que querés volver sin guardar los cambios?")) return;
+  const ev = EVENTS[idx];
+  resetForm();
+  if(ev){
+    switchTab('cal');
+    viewYear = ev.date.getFullYear(); viewMonth = ev.date.getMonth();
+    render();
+    setTimeout(()=>openModal(idx), 100);
+  } else {
+    switchTab('cal');
+  }
+}
+
+function deleteEvent(idx){
+  const ev = EVENTS[idx];
+  if(!ev) return;
+  const nombreMostrar = ev.homenajeado || ev.cliente || "este evento";
+  if(!confirm(`¿Seguro que querés eliminar el evento de "${nombreMostrar}" (${ev.dateStr} — ${ev.inicio||"?"}hs)?\n\nEsta acción no se puede deshacer.`)) return;
+
+  fetch(APPS_SCRIPT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ accion: "eliminar", Fecha: ev.dateStr, Inicio: ev.inicio, Cliente: ev.cliente }),
+  })
+    .then(r => r.json())
+    .then(res => {
+      if(res.ok){
+        alert("✅ Evento eliminado correctamente.");
+        closeModal();
+        loadData();
+      } else {
+        alert("⚠ No se pudo eliminar: " + (res.mensaje || "error desconocido"));
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      alert("⚠ No se pudo conectar para eliminar el evento.\n\n" + err.message);
+    });
+}
+
 function editFromModal(idx){
   const ev = EVENTS[idx];
   editingIdx = idx;
+  editingOriginal = { Fecha: ev.dateStr, Inicio: ev.inicio, Cliente: ev.cliente };
   switchTab('form');
   document.getElementById("formBanner").className = "form-banner editing";
-  document.getElementById("formBanner").innerHTML = `<span>✏️ Estás corrigiendo el evento de <b>${ev.homenajeado||ev.cliente}</b> (${ev.dateStr}). Los cambios van a reemplazar los datos actuales.</span>`;
+  document.getElementById("formBanner").innerHTML = `<span>✏️ Estás corrigiendo el evento de <b>${ev.homenajeado||ev.cliente}</b> (${ev.dateStr}). <button type="button" class="link-volver" onclick="volverAlCalendario(${idx})">← Volver sin guardar</button></span>`;
   closeModal();
   document.getElementById("fCliente").value = ev.cliente;
   document.getElementById("fContacto").value = ev.contacto;
@@ -1208,6 +1335,7 @@ function editFromModal(idx){
   renderTurnos();
   selectedTurno = ev.inicio;
   setTimeout(()=>{ document.querySelectorAll('.turno-chip').forEach(c=>c.classList.toggle('selected', c.dataset.hora===ev.inicio)); }, 50);
+  mostrarCampoFin(ev.inicio, ev.fin);
 
   // precargar staff con su estado de confirmacion
   ['animadorRows','camareroRows','fotografoRows'].forEach(id=>document.getElementById(id).innerHTML='');
@@ -1238,12 +1366,22 @@ function confirmCancel(){
 
 function resetForm(){
   editingIdx = null;
+  editingOriginal = null;
   document.getElementById("eventForm").reset();
   document.getElementById("formBanner").className = "form-banner";
   document.getElementById("formBanner").innerHTML = `<span>📝 Estás cargando un evento nuevo.</span>`;
   document.getElementById("dpTriggerText").textContent = "Elegí una fecha en el calendario";
   document.getElementById("turnosField").style.display = "none";
+  document.getElementById("finField").style.display = "none";
+  document.getElementById("dpPanel").classList.remove("open");
   selectedDate = null; selectedTurno = null;
+  const pastWarning = document.getElementById("pastDateWarning");
+  if(pastWarning) pastWarning.remove();
+  const horarioPicker = document.getElementById("horarioPickerWrap");
+  if(horarioPicker) horarioPicker.remove();
+  const today = new Date();
+  dpYear = today.getFullYear(); dpMonth = today.getMonth();
+  renderDatePicker();
   document.querySelectorAll('.tipo-chip').forEach(c=>{ c.classList.remove('selected'); c.style.background=''; });
   ['animadorRows','camareroRows','fotografoRows'].forEach(id=>document.getElementById(id).innerHTML='');
   populateStaffSelects();
@@ -1283,19 +1421,61 @@ function calcularEstar(horaInicio){
 
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxLgpquLobtJ5r6JeX1d-JoPyPps8O7prTu2Ke4Ejkh4iGBDOg1mwpx4ggQqr2k6t7IjQ/exec";
 
+function horaAMinutos(hora){
+  if(!hora || !hora.includes(":")) return null;
+  const [h, m] = hora.split(":").map(Number);
+  return h*60 + m;
+}
+
+function checkSuperposicion(fechaStr, inicio, fin){
+  const inicioMin = horaAMinutos(inicio);
+  const finMin = horaAMinutos(fin);
+  if(inicioMin === null || finMin === null) return null;
+
+  const eventosDelDia = EVENTS.filter(ev =>
+    ev.estado === "EVENTO" &&
+    ev.dateStr === fechaStr &&
+    !(editingOriginal && ev.dateStr === editingOriginal.Fecha && ev.inicio === editingOriginal.Inicio && ev.cliente === editingOriginal.Cliente)
+  );
+
+  for(const ev of eventosDelDia){
+    const evInicioMin = horaAMinutos(ev.inicio);
+    let evFinMin = horaAMinutos(ev.fin);
+    if(evFinMin === null) evFinMin = evInicioMin + 150; // si no tiene Fin cargado, asumimos 2hs30 default
+    if(evInicioMin === null) continue;
+
+    // hay superposicion si los rangos [inicioMin,finMin) y [evInicioMin,evFinMin) se cruzan
+    const seSuperponen = inicioMin < evFinMin && evInicioMin < finMin;
+    if(seSuperponen){
+      return ev;
+    }
+  }
+  return null;
+}
+
 function saveEvent(){
   if(!selectedDate){ alert("Elegí una fecha primero."); return; }
   if(!selectedTurno){ alert("Elegí el turno u horario."); return; }
+
+  const fechaStrCheck = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth()+1).padStart(2,'0')}-${String(selectedDate.getDate()).padStart(2,'0')}`;
+  const finCheck = getSelectedFin();
+  const eventoQueChoca = checkSuperposicion(fechaStrCheck, selectedTurno, finCheck);
+  if(eventoQueChoca){
+    alert(`⚠ No se puede guardar: este horario se superpone con el evento de "${eventoQueChoca.homenajeado || eventoQueChoca.cliente}" (${eventoQueChoca.inicio}–${eventoQueChoca.fin||"?"}hs) ese mismo día.\n\nElegí otro horario o revisá ese evento primero.`);
+    return;
+  }
 
   const staffStr = collectStaffData();
   const y = selectedDate.getFullYear();
   const m = String(selectedDate.getMonth()+1).padStart(2,'0');
   const d = String(selectedDate.getDate()).padStart(2,'0');
+  const esEdicion = editingIdx !== null;
 
   const datos = {
+    accion: esEdicion ? "actualizar" : "crear",
     Fecha: `${y}-${m}-${d}`,
     Inicio: selectedTurno,
-    Fin: "",
+    Fin: getSelectedFin(),
     Base: document.getElementById("fBase").value,
     Cliente: document.getElementById("fCliente").value,
     Contacto: document.getElementById("fContacto").value,
@@ -1311,10 +1491,11 @@ function saveEvent(){
     "Coordinador/Etiqueta": "",
     Alertas: "",
   };
+  if(esEdicion) datos.original = editingOriginal;
 
   const btn = document.querySelector(".btn-save");
   const textoOriginal = btn.textContent;
-  btn.textContent = "Guardando…";
+  btn.textContent = esEdicion ? "Actualizando…" : "Guardando…";
   btn.disabled = true;
 
   fetch(APPS_SCRIPT_URL, {
@@ -1327,7 +1508,7 @@ function saveEvent(){
       btn.textContent = textoOriginal;
       btn.disabled = false;
       if(res.ok){
-        alert("✅ Evento guardado correctamente en el Sheet.");
+        alert(esEdicion ? "✅ Evento actualizado correctamente." : "✅ Evento guardado correctamente en el Sheet.");
         resetForm();
         loadData();
       } else {
