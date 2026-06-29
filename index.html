@@ -666,6 +666,7 @@ function parseCSV(text){
 let EVENTS = [];
 let viewYear, viewMonth;
 let mcYear, mcMonth;
+let primeraCarga = true;
 
 function loadData(){
   fetch(CSV_URL, {cache:"no-store"})
@@ -713,14 +714,18 @@ function loadData(){
       EVENTS.sort((a,b)=>a.date-b.date);
       const totalEventosReales = EVENTS.filter(e=>e.estado==="EVENTO").length;
       setStatus(true, `Conectado · ${totalEventosReales} eventos cargados`);
-      const today = new Date();
-      viewYear = today.getFullYear(); viewMonth = today.getMonth();
-      if(!EVENTS.some(e=>e.date.getFullYear()===viewYear && e.date.getMonth()===viewMonth) && EVENTS.length){
-        const first = EVENTS.slice().sort((a,b)=>a.date-b.date)[0];
-        viewYear = first.date.getFullYear(); viewMonth = first.date.getMonth();
+
+      if(primeraCarga){
+        const today = new Date();
+        viewYear = today.getFullYear(); viewMonth = today.getMonth();
+        if(!EVENTS.some(e=>e.date.getFullYear()===viewYear && e.date.getMonth()===viewMonth) && EVENTS.length){
+          const first = EVENTS.slice().sort((a,b)=>a.date-b.date)[0];
+          viewYear = first.date.getFullYear(); viewMonth = first.date.getMonth();
+        }
+        dpYear = viewYear; dpMonth = viewMonth;
+        mcYear = viewYear; mcMonth = viewMonth;
+        primeraCarga = false;
       }
-      dpYear = viewYear; dpMonth = viewMonth;
-      mcYear = viewYear; mcMonth = viewMonth;
       renderMiniCounter();
       render();
       renderDatePicker();
