@@ -1281,6 +1281,8 @@ function calcularEstar(horaInicio){
   return `${hh}:${mm}`;
 }
 
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxLgpquLobtJ5r6JeX1d-JoPyPps8O7prTu2Ke4Ejkh4iGBDOg1mwpx4ggQqr2k6t7IjQ/exec";
+
 function saveEvent(){
   if(!selectedDate){ alert("Elegí una fecha primero."); return; }
   if(!selectedTurno){ alert("Elegí el turno u horario."); return; }
@@ -1290,29 +1292,54 @@ function saveEvent(){
   const m = String(selectedDate.getMonth()+1).padStart(2,'0');
   const d = String(selectedDate.getDate()).padStart(2,'0');
 
-  const resumen = {
+  const datos = {
     Fecha: `${y}-${m}-${d}`,
-    "Estar (staff)": calcularEstar(selectedTurno),
     Inicio: selectedTurno,
+    Fin: "",
+    Base: document.getElementById("fBase").value,
     Cliente: document.getElementById("fCliente").value,
     Contacto: document.getElementById("fContacto").value,
     "Homenajeado/a": document.getElementById("fHomenajeado").value,
     Edad: document.getElementById("fEdad").value,
-    Base: document.getElementById("fBase").value,
-    "Tipo de evento": getSelectedTipo(),
-    "Staff Asignado": staffStr,
-    "Homenaj. Extra": document.getElementById("fHomExtra").value,
-    "Bebida Adultos": document.getElementById("fBebidaAd").value,
-    "Staff Extra": document.getElementById("fStaffExtra").value,
-    Maquillaje: document.getElementById("fMaqui").value,
-    "Show/Mago": document.getElementById("fShowMago").value,
-    "Hora Extra": document.getElementById("fHoraExtra").value,
+    "Cant. Niñxs": document.getElementById("fNinxs").value,
+    "Cant. Adultos": document.getElementById("fAdultos").value,
+    Total: document.getElementById("fTotal").value,
+    "Seña": document.getElementById("fSena").value,
+    Restan: document.getElementById("fRestan").value,
     Aclaraciones: document.getElementById("fAclaraciones").value,
+    "Staff Asignado": staffStr,
+    "Coordinador/Etiqueta": "",
+    Alertas: "",
   };
 
-  console.log("Evento a guardar:", resumen);
-  alert("PROTOTIPO: todavía no se guarda en el Sheet real (falta conectar el Apps Script).\n\nVista previa de lo que se guardaría:\n\n" +
-    Object.entries(resumen).filter(([k,v])=>v).map(([k,v])=>`${k}: ${v}`).join("\n"));
+  const btn = document.querySelector(".btn-save");
+  const textoOriginal = btn.textContent;
+  btn.textContent = "Guardando…";
+  btn.disabled = true;
+
+  fetch(APPS_SCRIPT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(datos),
+  })
+    .then(r => r.json())
+    .then(res => {
+      btn.textContent = textoOriginal;
+      btn.disabled = false;
+      if(res.ok){
+        alert("✅ Evento guardado correctamente en el Sheet.");
+        resetForm();
+        loadData();
+      } else {
+        alert("⚠ Hubo un problema al guardar: " + (res.mensaje || "error desconocido"));
+      }
+    })
+    .catch(err => {
+      btn.textContent = textoOriginal;
+      btn.disabled = false;
+      console.error(err);
+      alert("⚠ No se pudo conectar para guardar el evento. Revisá tu conexión e intentá de nuevo.\n\n" + err.message);
+    });
 }
 
 loadData();
